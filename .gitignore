@@ -1,0 +1,27 @@
+# Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Snakemake Cache
+.snakemake/
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+# Data & Results
+data/*
+!data/**/.gitkeep
+results/*
+!results/**/.gitkeep
+
+# IDE
+.vscode/
