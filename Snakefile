@@ -11,19 +11,22 @@ rule all:
 
 rule extract_landmarks:
     input:
-        "data/input/{video_name}.mp4"
+        "src/cv_utils.py",
+        video="data/input/{video_name}.mp4"
     output:
         "data/process/{video_name}_landmarks.csv"
     shell:
-        "scripts/extract_landmarks.py {input} {output}"
+        "scripts/extract_landmarks.py {input.video} {output}"
 
 rule process_landmarks:
     input:
-        "data/process/{video_name}_landmarks.csv"
+        "src/physics_utils.py",
+        "src/math_utils.py",
+        csv="data/process/{video_name}_landmarks.csv"
     output:
         "data/process/{video_name}_processed_landmarks.csv"
     shell:
-        "scripts/process_landmarks.py {input} {output}"
+        "scripts/process_landmarks.py {input.csv} {output}"
 
 rule detect_rep:
     input:

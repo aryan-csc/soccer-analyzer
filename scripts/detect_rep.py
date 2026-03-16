@@ -1,5 +1,5 @@
 import sys
-from src.physics import RepDetector
+from src.physics_utils import RepDetector
 
 input_path, output_path = sys.argv[1], sys.argv[2]
 

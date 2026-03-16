@@ -1,5 +1,5 @@
 import sys
-from src.physics import KinematicsProcessor
+from src.physics_utils import KinematicsProcessor
 
 input_path, output_path = sys.argv[1], sys.argv[2]
 

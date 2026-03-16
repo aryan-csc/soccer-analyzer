@@ -1,5 +1,5 @@
 import sys
-from src.physics import IdealPathCalculator
+from src.physics_utils import IdealPathCalculator
 
 input_csv, input_json, output_path = sys.argv[1], sys.argv[2], sys.argv[3]
 
