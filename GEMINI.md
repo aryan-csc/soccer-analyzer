@@ -51,7 +51,7 @@ The project is managed by the `Snakefile` and can be run using the `snakemake` c
 To run the full pipeline for all videos in `data/raw/`:
 
 ```bash
-snakemake --cores 1
+snakemake --cores all
 ```
 
 This command will execute the entire workflow defined in the `Snakefile`, generating the final analyzed video in the `results/videos/` directory. For example, an input file named `data/raw/my_lift.mp4` will produce `results/videos/my_lift_analyzed.mp4`.
