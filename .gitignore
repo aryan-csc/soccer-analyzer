@@ -1,8 +1,5 @@
 # Environments
-venv/
-.venv/
-env/
-ENV/
+venv/*
 
 # Python Cache
 __pycache__/
@@ -19,9 +16,7 @@ Thumbs.db
 
 # Data & Results
 data/*
-!data/**/.gitkeep
 results/*
-!results/**/.gitkeep
 
 # IDE
 .vscode/
