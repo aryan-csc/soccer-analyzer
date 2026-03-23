@@ -12,11 +12,14 @@ class KinematicsProcessor:
     def process(self):
         df = pd.read_csv(self.input_csv)
         
-        df['bar_x'] = (df['left_wrist_x'] + df['right_wrist_x']) / 2.0
-        df['bar_y'] = 1.0 - ((df['left_wrist_y'] + df['right_wrist_y']) / 2.0)
+        # --- UPDATED BARBELL PROXY ---
+        # Map the new CSRT plate coordinates to the bar variables
+        df['bar_x'] = df['plate_x']
+        # We still invert the Y-axis so 0 is the floor for standard physics!
+        df['bar_y'] = 1.0 - df['plate_y'] 
         
         for col in df.columns:
-            if col.endswith('_y') and col not in ['bar_y']:
+            if col.endswith('_y') and col not in ['bar_y', 'plate_y']:
                 df[col + '_inv'] = 1.0 - df[col]
 
         df['smooth_bar_x'] = smooth_data(df['bar_x'])

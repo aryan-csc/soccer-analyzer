@@ -25,13 +25,46 @@ class PoseExtractor:
 
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # --- INITIALIZE CSRT TRACKER ---
+        ret, first_frame = cap.read()
+        if not ret:
+            print("Error: Could not read the first frame.")
+            sys.exit(1)
+
+        print("\n--- BARBELL CALIBRATION ---")
+        print("A window will pop up. Draw a box around the barbell plate.")
+        print("Press ENTER or SPACE to confirm the box and start processing.")
+        
+        bbox = cv2.selectROI("Select Barbell Plate", first_frame, fromCenter=False, showCrosshair=True)
+        cv2.destroyWindow("Select Barbell Plate")
+
+        # Initialize the tracker with the selected bounding box
+        tracker = cv2.TrackerCSRT_create()
+        tracker.init(first_frame, bbox)
+
+        # Reset video back to frame 0 so we process the whole thing
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        # -------------------------------
+
         data = []
         frame_idx = 0
+        last_plate_x, last_plate_y = 0.5, 0.5 # Fallback coordinates
 
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret: break
 
+            # 1. Update OpenCV Tracker
+            success, bbox = tracker.update(frame)
+            if success:
+                # Calculate the center of the bounding box and normalize it (0.0 to 1.0)
+                last_plate_x = (bbox[0] + (bbox[2] / 2.0)) / width
+                last_plate_y = (bbox[1] + (bbox[3] / 2.0)) / height
+
+            # 2. Update MediaPipe Pose
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.pose.process(frame_rgb)
 
@@ -40,10 +73,12 @@ class PoseExtractor:
                 data.append({
                     'frame': frame_idx,
                     'time_sec': frame_idx / fps,
-                    'left_wrist_x': lm[self.mp_pose.PoseLandmark.LEFT_WRIST].x,
-                    'left_wrist_y': lm[self.mp_pose.PoseLandmark.LEFT_WRIST].y,
-                    'right_wrist_x': lm[self.mp_pose.PoseLandmark.RIGHT_WRIST].x,
-                    'right_wrist_y': lm[self.mp_pose.PoseLandmark.RIGHT_WRIST].y,
+                    
+                    # New Direct Barbell Tracking
+                    'plate_x': last_plate_x,
+                    'plate_y': last_plate_y,
+                    
+                    # Original Body Tracking
                     'left_shoulder_x': lm[self.mp_pose.PoseLandmark.LEFT_SHOULDER].x,
                     'left_shoulder_y': lm[self.mp_pose.PoseLandmark.LEFT_SHOULDER].y,
                     'left_hip_x': lm[self.mp_pose.PoseLandmark.LEFT_HIP].x,
@@ -61,7 +96,6 @@ class PoseExtractor:
         cap.release()
         pd.DataFrame(data).to_csv(self.output_csv_path, index=False)
         print(f"\nSaved {len(data)} frames to {self.output_csv_path}")
-
 
 class VideoRenderer:
     def __init__(self, input_video, input_csv, input_ideal, input_json, output_video):
