@@ -3,16 +3,17 @@ import mediapipe as mp
 import pandas as pd
 import sys
 
+
 class PoseExtractor:
 
     PoseLandmark = mp.solutions.pose.PoseLandmark
 
     JOINTS = {
         "shoulder": (PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER),
-        "elbow":    (PoseLandmark.LEFT_ELBOW,    PoseLandmark.RIGHT_ELBOW),
-        "hip":      (PoseLandmark.LEFT_HIP,      PoseLandmark.RIGHT_HIP),
-        "knee":     (PoseLandmark.LEFT_KNEE,     PoseLandmark.RIGHT_KNEE),
-        "ankle":    (PoseLandmark.LEFT_ANKLE,    PoseLandmark.RIGHT_ANKLE),
+        "elbow": (PoseLandmark.LEFT_ELBOW, PoseLandmark.RIGHT_ELBOW),
+        "hip": (PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP),
+        "knee": (PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE),
+        "ankle": (PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE),
     }
 
     def __init__(self, video_path, output_csv_path):
@@ -32,16 +33,16 @@ class PoseExtractor:
             print(f"Error: Could not open video {self.video_path}", file=sys.stderr)
             sys.exit(1)
         meta = {
-            "fps":    cap.get(cv2.CAP_PROP_FPS),
-            "total_frames":  int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-            "width":  int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            "fps": cap.get(cv2.CAP_PROP_FPS),
+            "total_frames": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+            "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
             "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
         }
         return cap, meta
 
     def _detect_side_index(self, lm):
         """Return 0 for left, 1 for right, based on visibility in the first frame."""
-        left_vis  = sum(lm[ids[0]].visibility for ids in self.JOINTS.values())
+        left_vis = sum(lm[ids[0]].visibility for ids in self.JOINTS.values())
         right_vis = sum(lm[ids[1]].visibility for ids in self.JOINTS.values())
         return 0 if left_vis >= right_vis else 1
 
@@ -58,12 +59,16 @@ class PoseExtractor:
             self.side_index = self._detect_side_index(results.pose_landmarks.landmark)
         else:
             self.side_index = 0
-            print("Warning: Could not detect pose in first frame, defaulting to left side.")
+            print(
+                "Warning: Could not detect pose in first frame, defaulting to left side."
+            )
 
         # select bbox
         print("\n--- BARBELL CALIBRATION ---")
         print("Draw a box around the barbell plate, then press ENTER")
-        bbox = cv2.selectROI("Select Barbell Plate", first_frame, fromCenter=False, showCrosshair=True)
+        bbox = cv2.selectROI(
+            "Select Barbell Plate", first_frame, fromCenter=False, showCrosshair=True
+        )
         cv2.destroyWindow("Select Barbell Plate")
 
         tracker = cv2.TrackerCSRT_create()
@@ -97,7 +102,9 @@ class PoseExtractor:
             # barbell tracking
             success, bbox = tracker.update(frame)
             if success:
-                plate_xy = self._bbox_center_normalized(bbox, meta["width"], meta["height"])
+                plate_xy = self._bbox_center_normalized(
+                    bbox, meta["width"], meta["height"]
+                )
 
             # pose tracking
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -106,18 +113,22 @@ class PoseExtractor:
                 continue
 
             row = {
-                "frame":    frame_idx,
+                "frame": frame_idx,
                 "time": frame_idx / meta["fps"],
-                "bar_x":  plate_xy[0],
-                "bar_y":  plate_xy[1],
+                "bar_x": plate_xy[0],
+                "bar_y": plate_xy[1],
             }
-            for name, (x, y) in self._extract_landmarks(results.pose_landmarks.landmark).items():
+            for name, (x, y) in self._extract_landmarks(
+                results.pose_landmarks.landmark
+            ).items():
                 row[f"{name}_x"] = x
                 row[f"{name}_y"] = y
             data.append(row)
 
             if frame_idx % 50 == 0:
-                print(f"Processed {frame_idx}/{meta["total_frames"]} frames...", end="\r")
+                print(
+                    f"Processed {frame_idx}/{meta["total_frames"]} frames...", end="\r"
+                )
 
         cap.release()
         pd.DataFrame(data).to_csv(self.output_csv_path, index=False)

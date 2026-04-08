@@ -11,7 +11,7 @@ rule all:
 
 rule extract_landmarks:
     input:
-        dependency="src/renderer.py",
+        dependency="src/extractor.py",
         video="data/input/{video_name}.mp4"
     output:
         "data/process/{video_name}_landmarks.csv"
@@ -47,7 +47,7 @@ rule calculate_ideal:
 
 rule render_overlay:
     input:
-        dependency="src/extractor.py",
+        dependency="src/renderer.py",
         video="data/input/{video_name}.mp4",
         csv="data/process/{video_name}_processed_landmarks.csv",
         ideal="data/process/{video_name}_ideal_path.csv",
