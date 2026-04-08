@@ -7,8 +7,16 @@ The system tracks both the athlete and barbell, processes the raw coordinates th
 ## Demo
 
 <video autoplay loop muted playsinline width="100%">
-  <source src="assets/lift4_analyzed.mp4" type="video/mp4">
+  <source src="https://raw.githubusercontent.com/ishaan10x/weightlifting-analyzer/0a0efb8f8e02c762663df7362b6201a74dcbc9d2/assets/lift4_analyzed.mp4" type="video/mp4">
 </video>
+
+<video autoplay loop muted playsinline width="100%">
+<source src="assets/lift4_analyzed.mp4" type="video/mp4">
+</video>
+
+https://github.com/ishaan10x/weightlifting-analyzer/blob/main/assets/lift4_analyzed.mp4
+
+<video src="https://github.com/ishaan10x/weightlifting-analyzer/blob/main/assets/lift4_analyzed.mp4" width="320" height="240" controls></video>
 
 ## Key Features
 
