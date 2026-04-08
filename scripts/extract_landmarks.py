@@ -1,5 +1,5 @@
 import sys
-from src.cv_utils import PoseExtractor
+from src.extractor import PoseExtractor
 
 input_path, output_path = sys.argv[1], sys.argv[2]
 

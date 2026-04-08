@@ -2,11 +2,21 @@ import cv2
 import mediapipe as mp
 import pandas as pd
 import json
-import numpy as np
 import sys
 
 class PoseExtractor:
-    def __init__(self, video_path: str, output_csv_path: str):
+
+    PoseLandmark = mp.solutions.pose.PoseLandmark
+
+    JOINTS = {
+        "shoulder": (PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER),
+        "elbow":    (PoseLandmark.LEFT_ELBOW,    PoseLandmark.RIGHT_ELBOW),
+        "hip":      (PoseLandmark.LEFT_HIP,      PoseLandmark.RIGHT_HIP),
+        "knee":     (PoseLandmark.LEFT_KNEE,     PoseLandmark.RIGHT_KNEE),
+        "ankle":    (PoseLandmark.LEFT_ANKLE,    PoseLandmark.RIGHT_ANKLE),
+    }
+
+    def __init__(self, video_path, output_csv_path):
         self.video_path = video_path
         self.output_csv_path = output_csv_path
         self.mp_pose = mp.solutions.pose
@@ -14,84 +24,101 @@ class PoseExtractor:
             model_complexity=2,
             enable_segmentation=False,
             min_detection_confidence=0.7,
-            min_tracking_confidence=0.7
+            min_tracking_confidence=0.7,
         )
 
-    def process(self):
+    def _open_capture(self):
         cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
             print(f"Error: Could not open video {self.video_path}", file=sys.stderr)
             sys.exit(1)
+        meta = {
+            "fps":    cap.get(cv2.CAP_PROP_FPS),
+            "total_frames":  int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+            "width":  int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+        }
+        return cap, meta
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    def _detect_side_index(self, lm):
+        """Return 0 for left, 1 for right, based on visibility in the first frame."""
+        left_vis  = sum(lm[ids[0]].visibility for ids in self.JOINTS.values())
+        right_vis = sum(lm[ids[1]].visibility for ids in self.JOINTS.values())
+        return 0 if left_vis >= right_vis else 1
 
-        # --- INITIALIZE CSRT TRACKER ---
+    def _init_tracker(self, cap):
         ret, first_frame = cap.read()
         if not ret:
-            print("Error: Could not read the first frame.")
+            print("Error: Could not read the first frame.", file=sys.stderr)
             sys.exit(1)
 
+        # detect side
+        frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+        results = self.pose.process(frame_rgb)
+        if results.pose_landmarks:
+            self.side_index = self._detect_side_index(results.pose_landmarks.landmark)
+        else:
+            self.side_index = 0
+            print("Warning: Could not detect pose in first frame, defaulting to left side.")
+
+        # select bbox
         print("\n--- BARBELL CALIBRATION ---")
-        print("A window will pop up. Draw a box around the barbell plate.")
-        print("Press ENTER or SPACE to confirm the box and start processing.")
-        
+        print("Draw a box around the barbell plate, then press ENTER")
         bbox = cv2.selectROI("Select Barbell Plate", first_frame, fromCenter=False, showCrosshair=True)
         cv2.destroyWindow("Select Barbell Plate")
 
-        # Initialize the tracker with the selected bounding box
         tracker = cv2.TrackerCSRT_create()
         tracker.init(first_frame, bbox)
-
-        # Reset video back to frame 0 so we process the whole thing
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        # -------------------------------
+        return tracker
 
+    @staticmethod
+    def _bbox_center_normalized(bbox, width, height):
+        cx = (bbox[0] + bbox[2] / 2.0) / width
+        cy = (bbox[1] + bbox[3] / 2.0) / height
+        return cx, cy
+
+    def _extract_landmarks(self, lm):
+        return {
+            name: (lm[ids[self.side_index]].x, lm[ids[self.side_index]].y)
+            for name, ids in self.JOINTS.items()
+        }
+
+    def process(self):
+        cap, meta = self._open_capture()
+        tracker = self._init_tracker(cap)
         data = []
-        frame_idx = 0
-        last_plate_x, last_plate_y = 0.5, 0.5 # Fallback coordinates
+        plate_xy = (0.5, 0.5)
 
-        while cap.isOpened():
+        for frame_idx in range(meta["total_frames"]):
             ret, frame = cap.read()
-            if not ret: break
+            if not ret:
+                break
 
-            # 1. Update OpenCV Tracker
+            # barbell tracking
             success, bbox = tracker.update(frame)
             if success:
-                # Calculate the center of the bounding box and normalize it (0.0 to 1.0)
-                last_plate_x = (bbox[0] + (bbox[2] / 2.0)) / width
-                last_plate_y = (bbox[1] + (bbox[3] / 2.0)) / height
+                plate_xy = self._bbox_center_normalized(bbox, meta["width"], meta["height"])
 
-            # 2. Update MediaPipe Pose
+            # pose tracking
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.pose.process(frame_rgb)
+            if not results.pose_landmarks:
+                continue
 
-            if results.pose_landmarks:
-                lm = results.pose_landmarks.landmark
-                data.append({
-                    'frame': frame_idx,
-                    'time_sec': frame_idx / fps,
-                    
-                    # New Direct Barbell Tracking
-                    'plate_x': last_plate_x,
-                    'plate_y': last_plate_y,
-                    
-                    # Original Body Tracking
-                    'left_shoulder_x': lm[self.mp_pose.PoseLandmark.LEFT_SHOULDER].x,
-                    'left_shoulder_y': lm[self.mp_pose.PoseLandmark.LEFT_SHOULDER].y,
-                    'left_hip_x': lm[self.mp_pose.PoseLandmark.LEFT_HIP].x,
-                    'left_hip_y': lm[self.mp_pose.PoseLandmark.LEFT_HIP].y,
-                    'left_knee_x': lm[self.mp_pose.PoseLandmark.LEFT_KNEE].x,
-                    'left_knee_y': lm[self.mp_pose.PoseLandmark.LEFT_KNEE].y,
-                    'left_ankle_x': lm[self.mp_pose.PoseLandmark.LEFT_ANKLE].x,
-                    'left_ankle_y': lm[self.mp_pose.PoseLandmark.LEFT_ANKLE].y,
-                })
-            
-            frame_idx += 1
+            row = {
+                "frame":    frame_idx,
+                "time": frame_idx / meta["fps"],
+                "bar_x":  plate_xy[0],
+                "bar_y":  plate_xy[1],
+            }
+            for name, (x, y) in self._extract_landmarks(results.pose_landmarks.landmark).items():
+                row[f"{name}_x"] = x
+                row[f"{name}_y"] = y
+            data.append(row)
+
             if frame_idx % 50 == 0:
-                print(f"Processed {frame_idx}/{total_frames} frames...", end='\r')
+                print(f"Processed {frame_idx}/{meta["total_frames"]} frames...", end="\r")
 
         cap.release()
         pd.DataFrame(data).to_csv(self.output_csv_path, index=False)
@@ -125,22 +152,17 @@ class VideoRenderer:
 
         out = cv2.VideoWriter(self.output_video, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 
-        # Vectorized Pixel Coordinates (Pre-computed for OpenCV performance)
+        # vectorize pixel coordinates
         ideal_df['px_x'] = (ideal_df['ideal_bar_x'] * width).astype(int)
         ideal_df['px_y'] = ((1.0 - ideal_df['ideal_bar_y']) * height).astype(int)
         ideal_pts_array = ideal_df[['px_x', 'px_y']].values.reshape((-1, 1, 2))
 
-        # 1. Bar coordinates (Un-invert for OpenCV)
-        if 'smooth_bar_x' in df.columns:
-            df['smooth_bar_px_x'] = (df['smooth_bar_x'] * width).fillna(0).astype(int)
-            df['smooth_bar_px_y'] = ((1.0 - df['smooth_bar_y']) * height).fillna(0).astype(int)
-
-        # 2. Body coordinates (Keep top-down, no inverting needed)
-        body_cols = ['left_shoulder', 'left_hip', 'left_knee', 'left_ankle']
-        for col in body_cols:
-            if f'{col}_x' in df.columns:
-                df[f'{col}_px_x'] = (df[f'{col}_x'] * width).fillna(0).astype(int)
-                df[f'{col}_px_y'] = (df[f'{col}_y'] * height).fillna(0).astype(int)
+        # vectorize landmarks
+        for col in df.columns:
+            if col.endswith('_x'):
+                df[f'{col.removesuffix("_x")}_px_x'] = (df[col] * width).fillna(0).astype(int)
+            if col.endswith('_y'):
+                df[f'{col.removesuffix("_y")}_px_y'] = (df[col] * height).fillna(0).astype(int)
 
         actual_path_history = []
         frame_idx = 0
@@ -156,14 +178,16 @@ class VideoRenderer:
                     row = df.loc[frame_idx]
                     
                     joints = {
-                        'shoulder': (int(row['left_shoulder_px_x']), int(row['left_shoulder_px_y'])),
-                        'hip': (int(row['left_hip_px_x']), int(row['left_hip_px_y'])),
-                        'knee': (int(row['left_knee_px_x']), int(row['left_knee_px_y'])),
-                        'ankle': (int(row['left_ankle_px_x']), int(row['left_ankle_px_y']))
+                        'shoulder': (int(row['shoulder_px_x']), int(row['shoulder_px_y'])),
+                        'elbow': (int(row['elbow_px_x']), int(row['elbow_px_y'])),
+                        'hip': (int(row['hip_px_x']), int(row['hip_px_y'])),
+                        'knee': (int(row['knee_px_x']), int(row['knee_px_y'])),
+                        'ankle': (int(row['ankle_px_x']), int(row['ankle_px_y']))
                     }
-                    bar_pt = (int(row['smooth_bar_px_x']), int(row['smooth_bar_px_y']))
+                    bar_pt = (int(row['bar_px_x']), int(row['bar_px_y']))
                     
                     cv2.line(frame, joints['shoulder'], joints['hip'], (255, 255, 255), 4, cv2.LINE_AA)
+                    cv2.line(frame, joints['shoulder'], joints['elbow'], (255, 255, 255), 4, cv2.LINE_AA)
                     cv2.line(frame, joints['hip'], joints['knee'], (255, 255, 255), 4, cv2.LINE_AA)
                     cv2.line(frame, joints['knee'], joints['ankle'], (255, 255, 255), 4, cv2.LINE_AA)
                     

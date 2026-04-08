@@ -1,7 +1,7 @@
 import os
 from glob import glob
 
-shell.prefix("PYTHONPATH=. venv/bin/python ")
+shell.prefix("PYTHONPATH=. python ")
 VIDEOS = glob("data/input/*.mp4")
 VIDEO_NAMES = [os.path.splitext(os.path.basename(v))[0] for v in VIDEOS]
 
@@ -11,7 +11,7 @@ rule all:
 
 rule extract_landmarks:
     input:
-        "src/cv_utils.py",
+        dependency="src/renderer.py",
         video="data/input/{video_name}.mp4"
     output:
         "data/process/{video_name}_landmarks.csv"
@@ -20,8 +20,8 @@ rule extract_landmarks:
 
 rule process_landmarks:
     input:
-        "src/physics_utils.py",
-        "src/math_utils.py",
+        dependency1="src/physics_utils.py",
+        dependency2="src/math_utils.py",
         csv="data/process/{video_name}_landmarks.csv"
     output:
         "data/process/{video_name}_processed_landmarks.csv"
@@ -47,6 +47,7 @@ rule calculate_ideal:
 
 rule render_overlay:
     input:
+        dependency="src/extractor.py",
         video="data/input/{video_name}.mp4",
         csv="data/process/{video_name}_processed_landmarks.csv",
         ideal="data/process/{video_name}_ideal_path.csv",
