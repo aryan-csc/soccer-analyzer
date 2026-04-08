@@ -4,6 +4,12 @@ A Python-based computer vision pipeline that analyzes an Olympic Snatch lift. Bu
 
 The system tracks both the athlete and barbell, processes the raw coordinates through a custom physics engine, and renders an analytical overlay back onto the original video. Coaches and athletes can pinpoint weakness in their technique with this tool.
 
+## Demo
+
+<video autoplay loop muted playsinline width="100%">
+  <source src="assets/lift4_analyzed.mp4" type="video/mp4">
+</video>
+
 ## Key Features
 
 * **Hybrid Computer Vision Tracking:** Combines MediaPipe's pose estimation for human joint tracking with OpenCV's CSRT tracker for barbell tracking.
