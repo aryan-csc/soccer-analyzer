@@ -2,6 +2,18 @@
 
 Analyze penalties, free kicks, and general soccer shots directly from the terminal. The CLI tracks real 2D body landmarks, prints measurements and observations, and saves annotated video, graphs, CSV, JSON, and a text report. It runs locally without starting a web server or opening a browser.
 
+## Demo — Messi’s free kick
+
+Sample annotated output from Lionel Messi’s free kick in training, showing pose tracking, joint measurements, and estimated kick phases.
+
+[![Watch the annotated Messi free-kick output](assets/messi-freekick-preview.jpg)](https://github.com/aryan-csc/soccer-analyzer/blob/main/assets/messi-freekick-output.mp4)
+
+**[Watch or download the full output video](https://github.com/aryan-csc/soccer-analyzer/blob/main/assets/messi-freekick-output.mp4)**
+
+Original footage: [“Lionel Messi Amazing Freekick Goal in Training | HD” by INMESSIONANTE](https://www.youtube.com/watch?v=HnHF-si5rdk).
+
+The overlay contains 2D estimates; contact and phase labels require visual review. Foot speed is not ball speed.
+
 ## Run it now
 
 The environment in this workspace is already installed:
