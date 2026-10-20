@@ -1,7 +1,12 @@
-import sys
-from src.extractor import PoseExtractor
+"""Optional standalone pose extraction; output contains 2D pixel coordinates."""
+import argparse
+from pathlib import Path
+from src.extractor import extract_pose
+from src.pipeline import write_json
 
-input_path, output_path = sys.argv[1], sys.argv[2]
-
-print(f"Extracting poses from {input_path}...")
-PoseExtractor(input_path, output_path).process()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('video', type=Path, help='Standardized constant-frame-rate MP4')
+    parser.add_argument('output', type=Path, help='Pose JSON file')
+    args = parser.parse_args()
+    write_json(args.output, extract_pose(args.video))

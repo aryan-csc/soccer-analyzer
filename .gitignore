@@ -1,11 +1,16 @@
 # Environments
 venv/*
+.venv/
 
 # Python Cache
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.ruff_cache/
+.cache/
+test-results/
+playwright-report/
 
 # Snakemake Cache
 .snakemake/
@@ -16,6 +21,16 @@ Thumbs.db
 
 # Data
 data/*
+!data/examples/
+data/examples/*
+!data/examples/source.json
 
 # IDE
 .vscode/
+
+# User videos, generated results and preserved legacy files
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
+.archive/

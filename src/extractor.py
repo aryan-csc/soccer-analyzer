@@ -1,135 +1,135 @@
+"""Headless, image-plane pose extraction for soccer kick analysis.
+
+MediaPipe's 3-D/world landmarks are deliberately not used. A low-visibility
+landmark is omitted, rather than carried forward or filled with a made-up point.
+"""
+
+from __future__ import annotations
+
+import math
+from pathlib import Path
+from typing import Callable
+
 import cv2
-import mediapipe as mp
-import pandas as pd
-import sys
+
+Progress = Callable[[float, str], None]
+MIN_VISIBILITY = 0.5
+LANDMARK_NAMES = (
+    "nose",
+    "left_shoulder", "right_shoulder",
+    "left_elbow", "right_elbow",
+    "left_wrist", "right_wrist",
+    "left_hip", "right_hip",
+    "left_knee", "right_knee",
+    "left_ankle", "right_ankle",
+    "left_heel", "right_heel",
+    "left_foot_index", "right_foot_index",
+)
 
 
-class PoseExtractor:
+class VideoAnalysisError(ValueError):
+    """An input cannot produce a usable video analysis."""
 
-    PoseLandmark = mp.solutions.pose.PoseLandmark
 
-    JOINTS = {
-        "shoulder": (PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER),
-        "elbow": (PoseLandmark.LEFT_ELBOW, PoseLandmark.RIGHT_ELBOW),
-        "hip": (PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP),
-        "knee": (PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE),
-        "ankle": (PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE),
-    }
+def extract_pose(video_path: str | Path, progress: Progress | None = None) -> dict:
+    """Extract visible landmarks, in source-image pixels, for every video frame.
 
-    def __init__(self, video_path, output_csv_path):
-        self.video_path = video_path
-        self.output_csv_path = output_csv_path
-        self.mp_pose = mp.solutions.pose
-        self.pose = self.mp_pose.Pose(
-            model_complexity=2,
-            enable_segmentation=False,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7,
-        )
+    Use a constant-frame-rate input so frame index / fps is its playback time.
+    Both anatomical sides are retained regardless of the selected kicking foot.
+    Visibility >= 0.5 is a tracking-quality filter, not a technique threshold.
+    """
+    path = Path(video_path)
+    if not path.is_file():
+        raise VideoAnalysisError(f"Video file does not exist: {path.name}")
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        capture.release()
+        raise VideoAnalysisError("Cannot open this video. Upload a readable MP4 or MOV file.")
 
-    def _open_capture(self):
-        cap = cv2.VideoCapture(self.video_path)
-        if not cap.isOpened():
-            print(f"Error: Could not open video {self.video_path}", file=sys.stderr)
-            sys.exit(1)
-        meta = {
-            "fps": cap.get(cv2.CAP_PROP_FPS),
-            "total_frames": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-            "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-            "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        }
-        return cap, meta
+    try:
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = float(capture.get(cv2.CAP_PROP_FPS))
+        expected_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        if width <= 0 or height <= 0 or not math.isfinite(fps) or fps <= 0:
+            raise VideoAnalysisError("The video has invalid dimensions or frame rate.")
 
-    def _detect_side_index(self, lm):
-        """Return 0 for left, 1 for right, based on visibility in the first frame."""
-        left_vis = sum(lm[ids[0]].visibility for ids in self.JOINTS.values())
-        right_vis = sum(lm[ids[1]].visibility for ids in self.JOINTS.values())
-        return 0 if left_vis >= right_vis else 1
+        # Import lazily so the web server and media checks do not initialize the
+        # pose runtime until analysis actually starts.
+        import mediapipe as mp
 
-    def _init_tracker(self, cap):
-        ret, first_frame = cap.read()
-        if not ret:
-            print("Error: Could not read the first frame.", file=sys.stderr)
-            sys.exit(1)
-
-        # detect side
-        frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
-        results = self.pose.process(frame_rgb)
-        if results.pose_landmarks:
-            self.side_index = self._detect_side_index(results.pose_landmarks.landmark)
-        else:
-            self.side_index = 0
-            print(
-                "Warning: Could not detect pose in first frame, defaulting to left side."
+        model = Path(mp.__file__).parent / "modules/pose_landmark/pose_landmark_full.tflite"
+        if not model.is_file():
+            raise VideoAnalysisError(
+                "The bundled MediaPipe pose model is missing. Reinstall mediapipe==0.10.14."
             )
-
-        # select bbox
-        print("\n--- BARBELL CALIBRATION ---")
-        print("Draw a box around the barbell plate, then press ENTER")
-        bbox = cv2.selectROI(
-            "Select Barbell Plate", first_frame, fromCenter=False, showCrosshair=True
-        )
-        cv2.destroyWindow("Select Barbell Plate")
-
-        tracker = cv2.TrackerCSRT_create()
-        tracker.init(first_frame, bbox)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        return tracker
-
-    @staticmethod
-    def _bbox_center_normalized(bbox, width, height):
-        cx = (bbox[0] + bbox[2] / 2.0) / width
-        cy = (bbox[1] + bbox[3] / 2.0) / height
-        return cx, cy
-
-    def _extract_landmarks(self, lm):
-        return {
-            name: (lm[ids[self.side_index]].x, lm[ids[self.side_index]].y)
-            for name, ids in self.JOINTS.items()
+        landmark_ids = {
+            name: getattr(mp.solutions.pose.PoseLandmark, name.upper()).value
+            for name in LANDMARK_NAMES
         }
+        frames = []
+        visible_frames = 0
+        if progress:
+            progress(0.0, "Loading pose tracking model")
+        with mp.solutions.pose.Pose(
+            static_image_mode=False,
+            model_complexity=1,
+            smooth_landmarks=True,
+            enable_segmentation=False,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+        ) as pose:
+            while True:
+                decoded, frame = capture.read()
+                if not decoded:
+                    break
+                index = len(frames)
+                if frame.shape[:2] != (height, width):
+                    raise VideoAnalysisError("The video's frame dimensions change during playback.")
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                rgb.flags.writeable = False
+                result = pose.process(rgb)
+                landmarks = {}
+                if result.pose_landmarks:
+                    for name, landmark_id in landmark_ids.items():
+                        point = result.pose_landmarks.landmark[landmark_id]
+                        values = (float(point.x), float(point.y), float(point.visibility))
+                        if not all(math.isfinite(value) for value in values):
+                            continue
+                        if point.visibility < MIN_VISIBILITY:
+                            continue
+                        # An off-image joint is not visually observed and must
+                        # not become a valid measurement solely on confidence.
+                        if not (0 <= point.x <= 1 and 0 <= point.y <= 1):
+                            continue
+                        landmarks[name] = {
+                            "x": float(point.x) * width,
+                            "y": float(point.y) * height,
+                            "visibility": float(point.visibility),
+                        }
+                if landmarks:
+                    visible_frames += 1
+                frames.append({"frame": index, "time": index / fps, "landmarks": landmarks})
+                if progress and (index % 10 == 0):
+                    fraction = min(0.99, (index + 1) / max(expected_count, index + 2))
+                    progress(fraction, f"Tracking body landmarks: frame {index + 1}")
 
-    def process(self):
-        cap, meta = self._open_capture()
-        tracker = self._init_tracker(cap)
-        data = []
-        plate_xy = (0.5, 0.5)
-
-        for frame_idx in range(meta["total_frames"]):
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            # barbell tracking
-            success, bbox = tracker.update(frame)
-            if success:
-                plate_xy = self._bbox_center_normalized(
-                    bbox, meta["width"], meta["height"]
-                )
-
-            # pose tracking
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.pose.process(frame_rgb)
-            if not results.pose_landmarks:
-                continue
-
-            row = {
-                "frame": frame_idx,
-                "time": frame_idx / meta["fps"],
-                "bar_x": plate_xy[0],
-                "bar_y": plate_xy[1],
-            }
-            for name, (x, y) in self._extract_landmarks(
-                results.pose_landmarks.landmark
-            ).items():
-                row[f"{name}_x"] = x
-                row[f"{name}_y"] = y
-            data.append(row)
-
-            if frame_idx % 50 == 0:
-                print(
-                    f"Processed {frame_idx}/{meta["total_frames"]} frames...", end="\r"
-                )
-
-        cap.release()
-        pd.DataFrame(data).to_csv(self.output_csv_path, index=False)
-        print(f"\nSaved {len(data)} frames to {self.output_csv_path}")
+        if not frames:
+            raise VideoAnalysisError("The video contains no decodable frames.")
+        if not visible_frames:
+            raise VideoAnalysisError(
+                "No visible human pose was detected. Use a clear clip with one player, "
+                "the whole body in frame, and adequate lighting."
+            )
+        metadata = {
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "frame_count": len(frames),
+            "duration": len(frames) / fps,
+        }
+        if progress:
+            progress(1.0, f"Pose tracking complete: {visible_frames} of {len(frames)} frames")
+        return {"metadata": metadata, "frames": frames}
+    finally:
+        capture.release()

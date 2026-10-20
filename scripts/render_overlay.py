@@ -1,7 +1,13 @@
-import sys
-from src.renderer import VideoRenderer
+"""Optional standalone annotated soccer video export."""
+import argparse
+import json
+from pathlib import Path
+from src.renderer import render_overlay
 
-input_video, input_csv, input_ideal, input_json, output_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-
-print(f"Rendering final video to {output_path}...")
-VideoRenderer(input_video, input_csv, input_ideal, input_json, output_path).render()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('video', type=Path)
+    parser.add_argument('report', type=Path)
+    parser.add_argument('output', type=Path)
+    args = parser.parse_args()
+    render_overlay(args.video, json.loads(args.report.read_text()), args.output)

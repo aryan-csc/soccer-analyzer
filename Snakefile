@@ -1,58 +1,26 @@
-import os
-from glob import glob
+"""Optional batch workflow for soccer kick clips."""
+from pathlib import Path
+import sys
 
-shell.prefix("PYTHONPATH=. python ")
-VIDEOS = glob("data/input/*.mp4")
-VIDEO_NAMES = [os.path.splitext(os.path.basename(v))[0] for v in VIDEOS]
+VIDEOS = sorted(p.name for p in Path('input').glob('*') if p.suffix.lower() in ('.mp4', '.mov'))
+PYTHON = sys.executable
 
 rule all:
     input:
-        expand("data/output/{video_name}_analyzed.mp4", video_name=VIDEO_NAMES)
+        expand('output/{video}/.analysis/report.json', video=VIDEOS),
+        expand('output/{video}/overlay.mp4', video=VIDEOS)
 
-rule extract_landmarks:
+rule analyze_kick:
     input:
-        dependency="src/extractor.py",
-        video="data/input/{video_name}.mp4"
+        video='input/{video}',
+        code=['src/extractor.py', 'src/math_utils.py', 'src/physics_utils.py',
+              'src/renderer.py', 'src/pipeline.py', 'src/settings.py',
+              'src/cli_report.py', 'scripts/analyze_kick.py']
     output:
-        "data/process/{video_name}_landmarks.csv"
+        report='output/{video}/.analysis/report.json',
+        overlay='output/{video}/overlay.mp4'
+    params:
+        directory='output/{video}',
+        foot=lambda wildcards: config.get('foot', 'right')
     shell:
-        "scripts/extract_landmarks.py {input.video} {output}"
-
-rule process_landmarks:
-    input:
-        dependency1="src/physics_utils.py",
-        dependency2="src/math_utils.py",
-        csv="data/process/{video_name}_landmarks.csv"
-    output:
-        "data/process/{video_name}_processed_landmarks.csv"
-    shell:
-        "scripts/process_landmarks.py {input.csv} {output}"
-
-rule detect_rep:
-    input:
-        "data/process/{video_name}_processed_landmarks.csv"
-    output:
-        "data/process/{video_name}_metadata.json"
-    shell:
-        "scripts/detect_rep.py {input} {output}"
-
-rule calculate_ideal:
-    input:
-        csv="data/process/{video_name}_processed_landmarks.csv",
-        json="data/process/{video_name}_metadata.json"
-    output:
-        "data/process/{video_name}_ideal_path.csv"
-    shell:
-        "scripts/calculate_ideal.py {input.csv} {input.json} {output}"
-
-rule render_overlay:
-    input:
-        dependency="src/renderer.py",
-        video="data/input/{video_name}.mp4",
-        csv="data/process/{video_name}_processed_landmarks.csv",
-        ideal="data/process/{video_name}_ideal_path.csv",
-        json="data/process/{video_name}_metadata.json"
-    output:
-        "data/output/{video_name}_analyzed.mp4"
-    shell:
-        "scripts/render_overlay.py {input.video} {input.csv} {input.ideal} {input.json} {output}"
+        '{PYTHON:q} -m scripts.analyze_kick {input.video:q} --output {params.directory:q} --foot {params.foot:q}'
