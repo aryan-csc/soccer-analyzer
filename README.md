@@ -4,7 +4,7 @@ Analyze penalties, free kicks, and general soccer shots directly from the termin
 
 ## Demo — Messi’s free kick
 
-![Five-second demo of Messi’s free kick](assets/messi-freekick-output.gif)
+[![Six-second demo of Messi’s free kick](assets/messi-freekick-output.gif)](assets/messi-freekick-6s.mp4)
 
 ## Run it now
 
