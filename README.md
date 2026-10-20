@@ -4,15 +4,7 @@ Analyze penalties, free kicks, and general soccer shots directly from the termin
 
 ## Demo — Messi’s free kick
 
-Sample annotated output from Lionel Messi’s free kick in training, showing pose tracking, joint measurements, and estimated kick phases.
-
-[![Watch the annotated Messi free-kick output](assets/messi-freekick-preview.jpg)](https://github.com/aryan-csc/soccer-analyzer/blob/main/assets/messi-freekick-output.mp4)
-
-**[Watch or download the full output video](https://github.com/aryan-csc/soccer-analyzer/blob/main/assets/messi-freekick-output.mp4)**
-
-Original footage: [“Lionel Messi Amazing Freekick Goal in Training | HD” by INMESSIONANTE](https://www.youtube.com/watch?v=HnHF-si5rdk).
-
-The overlay contains 2D estimates; contact and phase labels require visual review. Foot speed is not ball speed.
+[![Play video](assets/messi-freekick-preview.jpg)](https://github.com/aryan-csc/soccer-analyzer/blob/main/assets/messi-freekick-output.mp4)
 
 ## Run it now
 
